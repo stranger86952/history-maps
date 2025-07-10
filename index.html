@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Historical Map Dating Game</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="header">
+        <h1>🗺️ Historical Map Dating Game</h1>
+        <div class="nav-buttons">
+            <button class="nav-btn active" onclick="switchMode('game')">ゲーム</button>
+            <button class="nav-btn" onclick="switchMode('practice')">練習</button>
+            <button class="nav-btn" onclick="switchMode('settings')">設定</button>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="map-container">
+            <div class="map-viewer" id="mapViewer">
+                <div class="map-canvas" id="mapCanvas">
+                    <div class="map-layer" id="backgroundLayer"></div>
+                    <div class="map-layer" id="countryLayer"></div>
+                </div>
+            </div>
+            <div class="map-info">
+                <div class="zoom-level">ズームレベル: <span id="zoomLevel">1</span></div>
+                <div class="map-position">位置: <span id="mapPosition">中央</span></div>
+            </div>
+        </div>
+
+        <div class="game-panel">
+            <div id="gameMode">
+                <div class="game-info">
+                    <div class="current-year" id="currentYear"></div>
+                    <div class="attempts-left">残り挑戦回数: <span id="attemptsLeft">6</span></div>
+                </div>
+                <div class="guess-input">
+                    <input type="number" id="guessInput" placeholder="年を入力 (1-2023)" min="1" max="2023">
+                    <button class="guess-btn" onclick="makeGuess()">推測</button>
+                </div>
+                <div class="guess-history" id="guessHistory"></div>
+                <div class="game-over" id="gameOver" style="display: none;">
+                    <h3 id="gameResult"></h3>
+                    <p id="answerReveal"></p>
+                    <button class="share-btn" onclick="shareResult()">結果をシェア</button>
+                    <button class="share-btn" onclick="resetGame()">新しいゲーム</button>
+                </div>
+            </div>
+
+            <div id="practiceMode" style="display: none;">
+                <div class="practice-controls">
+                    <h3>練習モード</h3>
+                    <div>
+                        <label>範囲:
+                            <input type="number" id="practiceMin" value="1" min="1" max="2023">
+                            〜
+                            <input type="number" id="practiceMax" value="2023" min="1" max="2023">
+                        </label>
+                    </div>
+                    <button class="guess-btn" onclick="startPractice()">練習開始</button>
+                </div>
+                <div class="game-info">
+                    <div class="current-year" id="practiceCurrentYear"></div>
+                    <div class="attempts-left">残り挑戦回数: <span id="practiceAttemptsLeft">6</span></div>
+                </div>
+                <div class="guess-input">
+                    <input type="number" id="practiceGuessInput" placeholder="年を入力" min="1" max="2023">
+                    <button class="guess-btn" onclick="makePracticeGuess()">推測</button>
+                </div>
+                <div class="guess-history" id="practiceGuessHistory"></div>
+                <div class="game-over" id="practiceGameOver" style="display: none;">
+                    <h3 id="practiceGameResult"></h3>
+                    <p id="practiceAnswerReveal"></p>
+                    <button class="share-btn" onclick="startPractice()">もう一度</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeSettings()">&times;</span>
+            <h2>設定</h2>
+            <div style="margin: 2rem 0;">
+                <label>
+                    <input type="checkbox" id="useOnlineMapZ4Settings" onchange="saveSettings()">
+                    Z4以降はオンライン地図を使用
+                </label>
+            </div>
+            <div style="margin: 2rem 0;">
+                <label>
+                    最大ズームレベル (1-6):
+                    <input type="number" id="maxZoomLevel" value="3" min="1" max="6" onchange="saveSettings()">
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

@@ -220,6 +220,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // ここからshareボタンの修正
     shareButton.addEventListener('click', () => {
         const shareText = `Historical Map Guessing Game - ${gameMode === 'daily' ? 'Daily' : 'Practice Mode'}\n`;
         let resultText = '';
@@ -242,23 +243,21 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }).join('\n');
 
-        const finalMessage = `${shareText}\n${resultText}\n\nYour guesses:\n${guessesList}\n\n#HistoricalMapDating`;
+        const finalMessage = `${shareText}\n${resultText}\n\nYour guesses:\n${guessesList}\n\n#HistoricalMapDating\n${window.location.href}`; // URLもメッセージに含める
 
-        if (navigator.share) {
-            navigator.share({
-                title: 'Historical Map Dating',
-                text: finalMessage,
-                url: window.location.href,
-            }).catch((error) => console.error('Web Share API failed:', error));
-        } else {
-            navigator.clipboard.writeText(finalMessage).then(() => {
-                showNotification('Results copied to clipboard!');
-            }).catch((err) => {
-                console.error('Failed to copy to clipboard:', err);
-                showNotification('Failed to copy results.');
-            });
-        }
+        // クリップボードにコピー
+        navigator.clipboard.writeText(finalMessage).then(() => {
+            const originalText = shareButton.textContent; // 元のテキストを保存
+            shareButton.textContent = 'Copied!'; // ボタンのテキストを変更
+            setTimeout(() => {
+                shareButton.textContent = originalText; // 数秒後に元のテキストに戻す
+            }, 2000); // 2秒間表示
+        }).catch((err) => {
+            console.error('Failed to copy to clipboard:', err);
+            showNotification('Failed to copy results.');
+        });
     });
+    // ここまでshareボタンの修正
 
     playAgainButton.addEventListener('click', () => {
         practiceState.targetYear = null;

@@ -8,8 +8,9 @@
 - beta : 非公開
 - [img](./img/) : 地図の画像
 - [tool](./tool/) : 地図画像管理用のスクリプト
-  - [download.py](./download.py)
-  - []
+  - [download.py](./tool/download.py)
+  - [summarize.py](./tool/summarize.py)
+  - [tile.json](./tool/tile.json) : 存在した画像のまとめ
 - [index.html](./index.html)
 - [style.css](./style.css)
 - [map.js](./map.js)

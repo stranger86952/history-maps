@@ -16,6 +16,19 @@ let lastPointer = { x: 0, y: 0 };
 const TILE_SIZE = 256;
 
 const tileCache = new Map();
+let tileYearData = {};
+
+async function loadTileYearData() {
+    try {
+        const response = await fetch('./tool/list.json');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        tileYearData = await response.json();
+    } catch (error) {
+        console.error('Failed to load list.json:', error);
+    }
+}
 
 function generateTileUrl(year, actualZoom, tileY, tileX, layer) {
     const formattedYear = (actualZoom >= 1 && actualZoom <= 3) ? String(year).padStart(4, '0') : String(year);
@@ -33,34 +46,57 @@ function generateTileUrl(year, actualZoom, tileY, tileX, layer) {
             return `https://geacron.b-cdn.net/tiles/area_${formattedYear}_Z${actualZoom}_${tileY}_${tileX}.png`;
         }
     }
-    console.warn(`Invalid zoom level or layer for tile URL: Z${actualZoom}_${tileY}_${tileX}, Layer: ${layer}`);
     return '';
 }
 
-async function getTileImage(year, actualZoom, tileY, tileX, layer, retryYear = year) {
-    const cacheKey = `${retryYear}-${actualZoom}-${tileY}-${tileX}-${layer}`;
+async function getTileImage(year, actualZoom, tileY, tileX, layer) {
+    let effectiveYear = year;
+
+    if (layer === 'front') {
+        let tileName;
+        if (actualZoom >= 1 && actualZoom <= 3) {
+            tileName = `Z${actualZoom}_${tileY}_${tileX}.png`;
+        } else if (actualZoom >= 4 && actualZoom <= 6) {
+            const z3_tileY = Math.floor(tileY / Math.pow(2, actualZoom - 3));
+            const z3_tileX = Math.floor(tileX / Math.pow(2, actualZoom - 3));
+            tileName = `Z3_${z3_tileY}_${z3_tileX}.png`;
+        }
+
+        const availableYears = tileYearData[tileName];
+        if (availableYears && availableYears.length > 0) {
+            // 問題の年以前で最も新しい年を見つける
+            // availableYearsを降順にソートしてから検索する
+            const sortedYears = [...availableYears].sort((a, b) => b - a);
+            let bestYear = sortedYears.find(y => y <= year);
+
+            if (bestYear) {
+                effectiveYear = bestYear;
+            } else {
+                // 問題の年以前の年が見つからない場合は、タイルを表示しない（nullを返す）
+                return Promise.resolve(null);
+            }
+        } else {
+            // list.jsonに情報がない場合も、タイルを表示しない（nullを返す）
+            return Promise.resolve(null);
+        }
+    }
+
+    const cacheKey = `${effectiveYear}-${actualZoom}-${tileY}-${tileX}-${layer}`;
     if (tileCache.has(cacheKey)) {
         return tileCache.get(cacheKey);
     }
 
-    const url = generateTileUrl(retryYear, actualZoom, tileY, tileX, layer);
+    const url = generateTileUrl(effectiveYear, actualZoom, tileY, tileX, layer);
     if (!url) return Promise.resolve(null);
 
     const promise = new Promise(async (resolve) => {
         const img = new Image();
         img.crossOrigin = 'anonymous';
         img.onload = () => resolve(img);
-        img.onerror = async () => {
-            if (layer === 'front' && actualZoom >= 4 && actualZoom <= 6 && retryYear > MAP_MIN_YEAR) {
-                console.warn(`404 for ${url}. Retrying with year ${retryYear - 1} for tile Z${actualZoom}_${tileY}_${tileX}.`);
-                const retryPromise = getTileImage(year, actualZoom, tileY, tileX, layer, retryYear - 1);
-                tileCache.set(cacheKey, retryPromise);
-                resolve(await retryPromise);
-            } else {
-                console.error(`Failed to load tile: ${url}`);
-                tileCache.delete(cacheKey);
-                resolve(null);
-            }
+        img.onerror = () => {
+            // ロード失敗時もタイルを表示しない（nullを返す）
+            tileCache.delete(cacheKey);
+            resolve(null);
         };
         img.src = url;
     });
@@ -69,15 +105,15 @@ async function getTileImage(year, actualZoom, tileY, tileX, layer, retryYear = y
     return promise;
 }
 
-window.initializeMap = function() {
+window.initializeMap = async function() {
     if (isMapInitialized) {
-        console.warn('Map already initialized.');
         return;
     }
 
+    await loadTileYearData();
+
     mapCanvas = document.getElementById('class');
     if (!mapCanvas) {
-        console.error('Map canvas element with ID "class" not found.');
         return;
     }
     mapCtx = mapCanvas.getContext('2d');
@@ -108,11 +144,9 @@ window.initializeMap = function() {
             setZoomLevelConstraint(event.target.checked);
         });
     } else {
-        console.warn('Zoom level checkbox with ID "zoomLevel" not found. Max zoom will default to 3.');
     }
 
     isMapInitialized = true;
-    console.log('Map initialized.');
 };
 
 window.loadMapForYear = function(year) {
@@ -234,7 +268,6 @@ function onWheel(e) {
 
         currentZoomLevel = newZoom;
         drawMap();
-        console.log(`Zoom changed to: ${currentZoomLevel.toFixed(2)}`);
     }
 }
 
@@ -243,7 +276,6 @@ function setZoomLevelConstraint(isChecked) {
     if (currentZoomLevel > maxZoomLevel + 0.99) {
         currentZoomLevel = parseFloat(maxZoomLevel.toFixed(2));
     }
-    console.log(`Max zoom level set to: ${maxZoomLevel}`);
     drawMap();
 }
 

@@ -11,7 +11,12 @@ let viewport = {
     y: 0
 };
 let isDragging = false;
-let lastPointer = { x: 0, y: 0 }; // マウスとタッチの両方に対応
+let lastPointer = { x: 0, y: 0 }; // マウスとシングルタッチの両方に対応
+
+// --- ピンチズーム関連の追加変数 ---
+let initialPinchDistance = -1; // ピンチ開始時の指間の距離
+let initialPinchMidpoint = { x: 0, y: 0 }; // ピンチ開始時の指の中間点
+// --- ここまで追加 ---
 
 const TILE_SIZE = 256;
 
@@ -129,14 +134,10 @@ window.initializeMap = async function() {
         mapCanvas.style.height = `${cssHeight}px`;
 
         // ここでコンテキストのリセットとスケール設定を行う
-        // 以前の setTransform は引数が不足しており問題を引き起こす可能性があった
         mapCtx.setTransform(1, 0, 0, 1, 0, 0); // まずリセット
         mapCtx.scale(devicePixelRatio, devicePixelRatio); // その後でスケールを適用
 
         // ビューポートの初期位置はCSSピクセルで計算された値を維持
-        // Z0 (ズームレベル1.0) の世界全体が1枚のタイルに相当すると仮定
-        // そのタイルがCanvasの中央に来るように初期位置を設定
-        // ここでの initialMapWidth/Height は Z1.0 での Z0 のタイルを基準にしているため、TILE_SIZE * 2
         const initialMapWidth = TILE_SIZE * 2;
         const initialMapHeight = TILE_SIZE * 2;
         viewport.x = (cssWidth / 2) - (initialMapWidth / 2);
@@ -191,7 +192,6 @@ async function performDrawMap() {
     if (!mapCtx || !currentMapYear) return;
 
     // Canvas全体をクリアして背景色で塗りつぶす (1pxの隙間対策)
-    // ここでの width/height は CSSピクセルベースの座標系で考える
     mapCtx.clearRect(0, 0, mapCanvas.width / (window.devicePixelRatio || 1), mapCanvas.height / (window.devicePixelRatio || 1));
     mapCtx.fillStyle = '#ADD8E6'; // 背景色
     mapCtx.fillRect(0, 0, mapCanvas.width / (window.devicePixelRatio || 1), mapCanvas.height / (window.devicePixelRatio || 1));
@@ -231,6 +231,12 @@ async function performDrawMap() {
                 }
             });
 
+            getTileImage(currentMapYear, clampedEffectiveLoadZoom, tileY, tileX, 'back').then(img => {
+                if (img && mapCtx) {
+                    mapCtx.drawImage(img, drawX, drawY, drawSize, drawSize);
+                }
+            });
+
             getTileImage(currentMapYear, clampedEffectiveLoadZoom, tileY, tileX, 'front').then(img => {
                 if (img && mapCtx) {
                     mapCtx.drawImage(img, drawX, drawY, drawSize, drawSize);
@@ -247,33 +253,123 @@ function drawMap() {
     }
 }
 
-function getPointerCoordinates(e) {
-    if (e.touches && e.touches.length > 0) {
-        return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+function getPointerCoordinates(e, index = 0) {
+    if (e.touches && e.touches.length > index) {
+        return { x: e.touches[index].clientX, y: e.touches[index].clientY };
     }
     // マウスイベントの場合
     return { x: e.clientX, y: e.clientY };
 }
 
+// 指の距離を計算するヘルパー関数
+function getDistance(p1, p2) {
+    return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+}
+
+// 指の中間点を計算するヘルパー関数
+function getMidpoint(p1, p2) {
+    return {
+        x: (p1.x + p2.x) / 2,
+        y: (p1.y + p2.y) / 2
+    };
+}
+
+
 function onPointerDown(e) {
-    // タッチイベントの場合のみ preventDefault を呼ぶ
-    if (e.touches) {
-        e.preventDefault();
+    if (e.touches && e.touches.length === 2) {
+        // 2本指の場合：ピンチズームの開始
+        e.preventDefault(); // デフォルトのブラウザジェスチャーを防止
+        isDragging = false; // パンを無効化
+        const p1 = getPointerCoordinates(e, 0);
+        const p2 = getPointerCoordinates(e, 1);
+        initialPinchDistance = getDistance(p1, p2);
+        initialPinchMidpoint = getMidpoint(p1, p2);
+        // ピンチズーム開始時のビューポート位置も記録しておくと、より正確なズームが可能
+        initialViewport = { ...viewport };
+        initialZoomLevel = currentZoomLevel;
+
+    } else if (e.touches && e.touches.length === 1) {
+        // 1本指の場合：パンの開始
+        e.preventDefault(); // デフォルトのブラウザジェスチャーを防止
+        isDragging = true;
+        initialPinchDistance = -1; // ピンチ状態をリセット
+        const coords = getPointerCoordinates(e);
+        lastPointer.x = coords.x;
+        lastPointer.y = coords.y;
+        mapCanvas.style.cursor = 'grabbing';
+    } else if (e.button === 0) { // マウス左クリック
+        isDragging = true;
+        const coords = getPointerCoordinates(e);
+        lastPointer.x = coords.x;
+        lastPointer.y = coords.y;
+        mapCanvas.style.cursor = 'grabbing';
     }
-    isDragging = true;
-    const coords = getPointerCoordinates(e);
-    lastPointer.x = coords.x;
-    lastPointer.y = coords.y;
-    mapCanvas.style.cursor = 'grabbing';
 }
 
 function onPointerUp(e) {
     isDragging = false;
+    initialPinchDistance = -1; // ピンチ状態をリセット
     mapCanvas.style.cursor = 'grab';
 }
 
 function onPointerMove(e) {
-    if (isDragging) {
+    if (e.touches && e.touches.length === 2) {
+        // 2本指での移動：ピンチズーム
+        e.preventDefault(); // デフォルトのブラウザジェスチャーを防止
+
+        const p1 = getPointerCoordinates(e, 0);
+        const p2 = getPointerCoordinates(e, 1);
+        const currentPinchDistance = getDistance(p1, p2);
+        const currentPinchMidpoint = getMidpoint(p1, p2);
+
+        if (initialPinchDistance === -1) { // 初めてのmoveで初期値を設定 (まれにtouchstartが呼ばれないケース対策)
+            initialPinchDistance = currentPinchDistance;
+            initialPinchMidpoint = currentPinchMidpoint;
+            initialViewport = { ...viewport };
+            initialZoomLevel = currentZoomLevel;
+            return;
+        }
+
+        const scaleChange = currentPinchDistance / initialPinchDistance;
+        let newZoom = initialZoomLevel + Math.log2(scaleChange); // 対数スケールでズームを調整
+
+        newZoom = Math.min(Math.max(newZoom, 1.0), maxZoomLevel + 0.99);
+
+        if (newZoom !== currentZoomLevel) {
+            // ズームの中心をピンチの中間点に合わせる
+            const oldZoom = currentZoomLevel;
+            currentZoomLevel = newZoom;
+
+            const oldEffectiveLoadZoom = Math.floor(oldZoom);
+            const newEffectiveLoadZoom = Math.floor(currentZoomLevel);
+
+            const zoomLevelChangeFactor = Math.pow(2, newEffectiveLoadZoom - oldEffectiveLoadZoom);
+            const oldRenderScaleFactor = Math.pow(2, oldZoom - oldEffectiveLoadZoom);
+            const newRenderScaleFactor = Math.pow(2, currentZoomLevel - newEffectiveLoadZoom);
+
+            // currentPinchMidpoint を使ってズーム後のビューポートを計算
+            viewport.x = currentPinchMidpoint.x - (currentPinchMidpoint.x - viewport.x) * zoomLevelChangeFactor * (newRenderScaleFactor / oldRenderScaleFactor);
+            viewport.y = currentPinchMidpoint.y - (currentPinchMidpoint.y - viewport.y) * zoomLevelChangeFactor * (newRenderScaleFactor / oldRenderScaleFactor);
+
+            drawMap();
+        }
+
+        // ピンチズーム中のパンも考慮
+        const dx = currentPinchMidpoint.x - initialPinchMidpoint.x;
+        const dy = currentPinchMidpoint.y - initialPinchMidpoint.y;
+
+        viewport.x += dx;
+        viewport.y += dy;
+
+        // 次のフレームのために中間点を更新（慣性を考慮しない場合）
+        initialPinchMidpoint = currentPinchMidpoint;
+        initialPinchDistance = currentPinchDistance; // 連続的なズームのために距離も更新
+
+        applyViewportConstraints(); // ズーム後のパン制限を適用
+        drawMap();
+
+    } else if (isDragging) {
+        // 1本指での移動、またはマウスでの移動：パン
         // タッチイベントの場合のみ preventDefault を呼ぶ
         if (e.touches) {
             e.preventDefault();
@@ -286,42 +382,43 @@ function onPointerMove(e) {
         viewport.x += dx;
         viewport.y += dy;
 
-        // --- 上下左右の制限 ---
-        const currentCanvasWidth = mapCanvas.width / (window.devicePixelRatio || 1);
-        const currentCanvasHeight = mapCanvas.height / (window.devicePixelRatio || 1);
-
-        // 現在のズームレベルにおける世界の合計表示幅/高さ
-        const currentTileRenderSize = TILE_SIZE * Math.pow(2, currentZoomLevel - Math.floor(currentZoomLevel));
-        const numTilesAtCurrentZoom = Math.pow(2, Math.floor(currentZoomLevel));
-        const totalWorldRenderWidth = numTilesAtCurrentZoom * currentTileRenderSize;
-        const totalWorldRenderHeight = numTilesAtCurrentZoom * currentTileRenderSize;
-
-        // 地図が画面より大きい場合にのみスクロール制限をかける
-        // そうでない場合は中央に固定
-
-        // X軸のクランプ
-        if (totalWorldRenderWidth > currentCanvasWidth) {
-            const maxClampX = 0; // 地図の左端が画面左端に合うとき (viewport.x が 0)
-            const minClampX = currentCanvasWidth - totalWorldRenderWidth; // 地図の右端が画面右端に合うとき
-            viewport.x = Math.min(Math.max(viewport.x, minClampX), maxClampX);
-        } else {
-            viewport.x = (currentCanvasWidth - totalWorldRenderWidth) / 2; // 中央に固定
-        }
-
-        // Y軸のクランプ
-        if (totalWorldRenderHeight > currentCanvasHeight) {
-            const maxClampY = 0; // 地図の上端が画面上端に合うとき (viewport.y が 0)
-            const minClampY = currentCanvasHeight - totalWorldRenderHeight; // 地図の下端が画面下端に合うとき
-            viewport.y = Math.min(Math.max(viewport.y, minClampY), maxClampY);
-        } else {
-            viewport.y = (currentCanvasHeight - totalWorldRenderHeight) / 2; // 中央に固定
-        }
+        applyViewportConstraints(); // パン制限を適用
 
         lastPointer.x = coords.x;
         lastPointer.y = coords.y;
         drawMap(); // requestAnimationFrame経由で描画
     }
 }
+
+// ビューポートの制限を適用する新しい関数
+function applyViewportConstraints() {
+    const currentCanvasWidth = mapCanvas.width / (window.devicePixelRatio || 1);
+    const currentCanvasHeight = mapCanvas.height / (window.devicePixelRatio || 1);
+
+    const currentTileRenderSize = TILE_SIZE * Math.pow(2, currentZoomLevel - Math.floor(currentZoomLevel));
+    const numTilesAtCurrentZoom = Math.pow(2, Math.floor(currentZoomLevel));
+    const totalWorldRenderWidth = numTilesAtCurrentZoom * currentTileRenderSize;
+    const totalWorldRenderHeight = numTilesAtCurrentZoom * currentTileRenderSize;
+
+    // X軸のクランプ
+    if (totalWorldRenderWidth > currentCanvasWidth) {
+        const maxClampX = 0;
+        const minClampX = currentCanvasWidth - totalWorldRenderWidth;
+        viewport.x = Math.min(Math.max(viewport.x, minClampX), maxClampX);
+    } else {
+        viewport.x = (currentCanvasWidth - totalWorldRenderWidth) / 2;
+    }
+
+    // Y軸のクランプ
+    if (totalWorldRenderHeight > currentCanvasHeight) {
+        const maxClampY = 0;
+        const minClampY = currentCanvasHeight - totalWorldRenderHeight;
+        viewport.y = Math.min(Math.max(viewport.y, minClampY), maxClampY);
+    } else {
+        viewport.y = (currentCanvasHeight - totalWorldRenderHeight) / 2;
+    }
+}
+
 
 const ZOOM_SPEED = 0.1;
 
@@ -340,7 +437,6 @@ function onWheel(e) {
     newZoom = Math.min(Math.max(newZoom, 1.0), maxZoomLevel + 0.99);
 
     if (oldZoom !== newZoom) {
-        // マウスカーソル位置をCanvas内でのCSSピクセル座標に変換
         const mouseX = e.clientX - mapCanvas.getBoundingClientRect().left;
         const mouseY = e.clientY - mapCanvas.getBoundingClientRect().top;
 
@@ -348,16 +444,15 @@ function onWheel(e) {
         const newEffectiveLoadZoom = Math.floor(newZoom);
 
         const zoomLevelChangeFactor = Math.pow(2, newEffectiveLoadZoom - oldEffectiveLoadZoom);
-
         const oldRenderScaleFactor = Math.pow(2, oldZoom - oldEffectiveLoadZoom);
-        const newRenderScaleFactor = Math.pow(2, newZoom - newEffectiveLoadZoom); // ここを修正
+        const newRenderScaleFactor = Math.pow(2, newZoom - newEffectiveLoadZoom);
 
-        // ズーム中心をマウスカーソルに合わせる
         viewport.x = mouseX - (mouseX - viewport.x) * zoomLevelChangeFactor * (newRenderScaleFactor / oldRenderScaleFactor);
         viewport.y = mouseY - (mouseY - viewport.y) * zoomLevelChangeFactor * (newRenderScaleFactor / oldRenderScaleFactor);
 
         currentZoomLevel = newZoom;
-        drawMap(); // requestAnimationFrame経由で描画
+        applyViewportConstraints(); // ズーム後に制限を適用
+        drawMap();
     }
 }
 

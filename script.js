@@ -33,8 +33,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let practiceState = {
         targetYear: null,
         guesses: [],
-        minYear: MAP_MIN_YEAR, // Added for practice range
-        maxYear: MAP_MAX_YEAR  // Added for practice range
+        minYear: MAP_MIN_YEAR,
+        maxYear: MAP_MAX_YEAR
     };
 
     function getTodayYyyymmdd() {
@@ -50,7 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let seed = parseInt(today);
         const a = 1103515245;
         const c = 12345;
-        const m = 2**31;
+        const m = 2 ** 31;
         seed = (a * seed + c) % m;
         return (seed % (MAP_MAX_YEAR - MAP_MIN_YEAR + 1)) + MAP_MIN_YEAR;
     }
@@ -107,24 +107,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (guess === currentTargetYear) {
                 feedbackText = ' (Correct!🎉)';
                 className = 'correct-guess';
-            } else if (guess > currentTargetYear) {
-                if (diff <= 10) {
-                    feedbackText = '⬇️ Super close!';
-                } else if (diff <= 50) {
-                    feedbackText = '⬇️ Pretty close!';
-                } else {
-                    feedbackText = '⬇️ Too far';
-                }
-                className = 'too-high-guess';
+            } else if (diff <= 10) {
+                feedbackText = (guess > currentTargetYear) ? '⬇️ Super close!' : '⬆️ Super close!';
+                className = 'super-close-guess';
+            } else if (diff <= 50) {
+                feedbackText = (guess > currentTargetYear) ? '⬇️ Pretty close!' : '⬆️ Pretty close!';
+                className = 'pretty-close-guess';
             } else {
-                if (diff <= 10) {
-                    feedbackText = '⬆️ Super close!';
-                } else if (diff <= 50) {
-                    feedbackText = '⬆️ Pretty close!';
-                } else {
-                    feedbackText = '⬆️ Too far';
-                }
-                className = 'too-low-guess';
+                feedbackText = (guess > currentTargetYear) ? '⬇️ Too far' : '⬆️ Too far';
+                className = 'too-far-guess';
             }
 
             listItem.textContent = `${index + 1}. ${guess} - ${feedbackText}`;
@@ -138,7 +129,6 @@ document.addEventListener('DOMContentLoaded', () => {
         yearInput.disabled = true;
         submitGuessButton.disabled = true;
         shareButton.style.display = 'inline-block';
-        // Always show playAgainButton in practice mode after a game ends or is reset
         if (gameMode === 'practice') {
             playAgainButton.style.display = 'inline-block';
         }
@@ -154,7 +144,6 @@ document.addEventListener('DOMContentLoaded', () => {
         yearInput.disabled = false;
         submitGuessButton.disabled = false;
         shareButton.style.display = 'none';
-        // In practice mode, playAgainButton is always visible from the start
         if (gameMode === 'daily') {
             playAgainButton.style.display = 'none';
         }
@@ -162,7 +151,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (gameMode === 'daily') {
             guessPrompt.textContent = getDate();
         } else if (gameMode === 'practice') {
-            // Display the year range for practice mode
             guessPrompt.textContent = `${practiceState.minYear} - ${practiceState.maxYear}`;
         }
     }
@@ -198,7 +186,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (diff <= 10) { showNotification('Close! A little too old.'); }
                 else if (diff <= 50) { showNotification('A bit too old.'); }
                 else { showNotification('Too old.'); }
-            }
+                }
         }
 
         if (gameMode === 'daily') {
@@ -231,41 +219,41 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // ここからshareボタンの修正
     shareButton.addEventListener('click', () => {
-        const date = getDate(); // "YYYY/MM/DD" 形式の日付を取得
+        let identifier;
+        if (gameMode === 'daily') {
+            identifier = getDate();
+        } else {
+            identifier = `${practiceState.minYear}-${practiceState.maxYear}`;
+        }
 
-        // 🟥🟨🟩✅ 形式の絵文字を生成
         const emojiFeedback = guesses.map(g => {
             const diff = Math.abs(g - currentTargetYear);
             if (g === currentTargetYear) return '✅';
-            if (diff <= 10) return '🟩'; // Super close
-            if (diff <= 50) return '🟨'; // Pretty close
-            return '🟥'; // Too far
+            if (diff <= 10) return '🟩';
+            if (diff <= 50) return '🟨';
+            return '🟥';
         }).join('');
 
-        // ⬇️⬇️⬆️🎉 形式の絵文字を生成
         const directionFeedback = guesses.map(g => {
             if (g === currentTargetYear) return '🎉';
             if (g > currentTargetYear) return '⬇️';
             return '⬆️';
         }).join('');
 
-        const finalMessage = `#HistoricalMapDating\n${date}\n${emojiFeedback}\n${directionFeedback}\n${window.location.href}`;
+        const finalMessage = `#HistoricalMapDating\n${identifier}\n${emojiFeedback}\n${directionFeedback}\n${window.location.href}`;
 
-        // クリップボードにコピー
         navigator.clipboard.writeText(finalMessage).then(() => {
-            const originalText = shareButton.textContent; // 元のテキストを保存
-            shareButton.textContent = 'Copied!'; // ボタンのテキストを変更
+            const originalText = shareButton.textContent;
+            shareButton.textContent = 'Copied!';
             setTimeout(() => {
-                shareButton.textContent = originalText; // 数秒後に元のテキストに戻す
-            }, 2000); // 2秒間表示
+                shareButton.textContent = originalText;
+            }, 2000);
         }).catch((err) => {
             console.error('Failed to copy to clipboard:', err);
             showNotification('Failed to copy results.');
         });
     });
-    // ここまでshareボタンの修正
 
     playAgainButton.addEventListener('click', () => {
         practiceState.targetYear = null;
@@ -275,7 +263,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function startDailyGame() {
         gameMode = 'daily';
-        resetGameUI(); // Call resetGameUI first to ensure correct prompt and button visibility for daily mode
+        resetGameUI();
 
         const today = getTodayYyyymmdd();
         const dailyData = loadDailyData();
@@ -306,21 +294,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function startPracticeGame() {
         gameMode = 'practice';
-        // Always show play again button in practice mode
         playAgainButton.style.display = 'inline-block';
-        resetGameUI(); // Call resetGameUI first to ensure correct prompt and button visibility for practice mode
+        resetGameUI();
 
         let minYear = parseInt(startYearSetting.value);
         let endYear = parseInt(endYearSetting.value);
 
-        // Update practiceState's minYear and maxYear based on settings
         practiceState.minYear = isNaN(minYear) || minYear < MAP_MIN_YEAR ? MAP_MIN_YEAR : minYear;
         practiceState.maxYear = isNaN(endYear) || endYear > MAP_MAX_YEAR ? MAP_MAX_YEAR : endYear;
         if (practiceState.minYear > practiceState.maxYear) {
             [practiceState.minYear, practiceState.maxYear] = [practiceState.maxYear, practiceState.minYear];
         }
 
-        // Update guessPrompt for practice mode to show the range
         guessPrompt.textContent = `${practiceState.minYear} - ${practiceState.maxYear}`;
 
 
@@ -375,6 +360,5 @@ document.addEventListener('DOMContentLoaded', () => {
         activateTab(settingsButton, settingsContent);
     });
 
-    // Initial activation
     activateTab(dailyButton, playContent);
 });

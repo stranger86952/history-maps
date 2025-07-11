@@ -32,7 +32,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let practiceState = {
         targetYear: null,
-        guesses: []
+        guesses: [],
+        minYear: MAP_MIN_YEAR, // Added for practice range
+        maxYear: MAP_MAX_YEAR  // Added for practice range
     };
 
     function getTodayYyyymmdd() {
@@ -136,6 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
         yearInput.disabled = true;
         submitGuessButton.disabled = true;
         shareButton.style.display = 'inline-block';
+        // Always show playAgainButton in practice mode after a game ends or is reset
         if (gameMode === 'practice') {
             playAgainButton.style.display = 'inline-block';
         }
@@ -151,9 +154,17 @@ document.addEventListener('DOMContentLoaded', () => {
         yearInput.disabled = false;
         submitGuessButton.disabled = false;
         shareButton.style.display = 'none';
-        playAgainButton.style.display = 'none';
+        // In practice mode, playAgainButton is always visible from the start
+        if (gameMode === 'daily') {
+            playAgainButton.style.display = 'none';
+        }
         historyList.innerHTML = '';
-        guessPrompt.textContent = getDate();
+        if (gameMode === 'daily') {
+            guessPrompt.textContent = getDate();
+        } else if (gameMode === 'practice') {
+            // Display the year range for practice mode
+            guessPrompt.textContent = `${practiceState.minYear} - ${practiceState.maxYear}`;
+        }
     }
 
     function processGuess() {
@@ -222,28 +233,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ここからshareボタンの修正
     shareButton.addEventListener('click', () => {
-        const shareText = `Historical Map Guessing Game - ${gameMode === 'daily' ? 'Daily' : 'Practice Mode'}\n`;
-        let resultText = '';
-        if (guesses[guesses.length - 1] === currentTargetYear) {
-            resultText = `Correct! Solved in ${guesses.length} guesses! 🎉`;
-        } else {
-            resultText = `Failed to solve. ${MAX_GUESSES} guesses used. The answer was ${currentTargetYear}.`;
-        }
-        const guessesList = guesses.map((g, i) => {
-            const diff = Math.abs(g - currentTargetYear);
-            if (g === currentTargetYear) return `${i + 1}. ${g} (Correct!🎉)`;
-            if (g > currentTargetYear) {
-                if (diff <= 10) return `${i + 1}. ${g} (Close! A little too new)`;
-                if (diff <= 50) return `${i + 1}. ${g} (A bit too new)`;
-                return `${i + 1}. ${g} (Too new)`;
-            } else {
-                if (diff <= 10) return `${i + 1}. ${g} (Close! A little too old)`;
-                if (diff <= 50) return `${i + 1}. ${g} (A bit too old)`;
-                return `${i + 1}. ${g} (Too old)`;
-            }
-        }).join('\n');
+        const date = getDate(); // "YYYY/MM/DD" 形式の日付を取得
 
-        const finalMessage = `${shareText}\n${resultText}\n\nYour guesses:\n${guessesList}\n\n#HistoricalMapDating\n${window.location.href}`; // URLもメッセージに含める
+        // 🟥🟨🟩✅ 形式の絵文字を生成
+        const emojiFeedback = guesses.map(g => {
+            const diff = Math.abs(g - currentTargetYear);
+            if (g === currentTargetYear) return '✅';
+            if (diff <= 10) return '🟩'; // Super close
+            if (diff <= 50) return '🟨'; // Pretty close
+            return '🟥'; // Too far
+        }).join('');
+
+        // ⬇️⬇️⬆️🎉 形式の絵文字を生成
+        const directionFeedback = guesses.map(g => {
+            if (g === currentTargetYear) return '🎉';
+            if (g > currentTargetYear) return '⬇️';
+            return '⬆️';
+        }).join('');
+
+        const finalMessage = `#HistoricalMapDating\n${date}\n${emojiFeedback}\n${directionFeedback}\n${window.location.href}`;
 
         // クリップボードにコピー
         navigator.clipboard.writeText(finalMessage).then(() => {
@@ -267,7 +275,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function startDailyGame() {
         gameMode = 'daily';
-        resetGameUI();
+        resetGameUI(); // Call resetGameUI first to ensure correct prompt and button visibility for daily mode
 
         const today = getTodayYyyymmdd();
         const dailyData = loadDailyData();
@@ -298,21 +306,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function startPracticeGame() {
         gameMode = 'practice';
-        resetGameUI();
+        // Always show play again button in practice mode
+        playAgainButton.style.display = 'inline-block';
+        resetGameUI(); // Call resetGameUI first to ensure correct prompt and button visibility for practice mode
+
+        let minYear = parseInt(startYearSetting.value);
+        let endYear = parseInt(endYearSetting.value);
+
+        // Update practiceState's minYear and maxYear based on settings
+        practiceState.minYear = isNaN(minYear) || minYear < MAP_MIN_YEAR ? MAP_MIN_YEAR : minYear;
+        practiceState.maxYear = isNaN(endYear) || endYear > MAP_MAX_YEAR ? MAP_MAX_YEAR : endYear;
+        if (practiceState.minYear > practiceState.maxYear) {
+            [practiceState.minYear, practiceState.maxYear] = [practiceState.maxYear, practiceState.minYear];
+        }
+
+        // Update guessPrompt for practice mode to show the range
+        guessPrompt.textContent = `${practiceState.minYear} - ${practiceState.maxYear}`;
+
 
         if (practiceState.targetYear && practiceState.guesses.length < MAX_GUESSES &&
             !(practiceState.guesses.length > 0 && practiceState.guesses[practiceState.guesses.length - 1] === practiceState.targetYear)) {
             currentTargetYear = practiceState.targetYear;
             guesses = practiceState.guesses;
         } else {
-            let minYear = parseInt(startYearSetting.value);
-            let endYear = parseInt(endYearSetting.value);
-
-            if (isNaN(minYear) || minYear < MAP_MIN_YEAR) minYear = MAP_MIN_YEAR;
-            if (isNaN(endYear) || endYear > MAP_MAX_YEAR) endYear = MAP_MAX_YEAR;
-            if (minYear > endYear) [minYear, endYear] = [endYear, minYear];
-
-            currentTargetYear = getRandomYear(minYear, endYear);
+            currentTargetYear = getRandomYear(practiceState.minYear, practiceState.maxYear);
             guesses = [];
 
             practiceState.targetYear = currentTargetYear;
@@ -358,5 +375,6 @@ document.addEventListener('DOMContentLoaded', () => {
         activateTab(settingsButton, settingsContent);
     });
 
+    // Initial activation
     activateTab(dailyButton, playContent);
 });
